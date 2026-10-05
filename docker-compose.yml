@@ -80,7 +80,11 @@ services:
       - "5672:5672"
       - "15672:15672"
     healthcheck:
-      test: ["CMD-SHELL", "rabbitmq-diagnostics -q ping && rabbitmq-diagnostics -q check_port_connectivity"]
+      test:
+        [
+          "CMD-SHELL",
+          "rabbitmq-diagnostics -q ping && rabbitmq-diagnostics -q check_port_connectivity"
+        ]
       interval: 3s
       timeout: 5s
       retries: 20
@@ -151,12 +155,30 @@ services:
 
   auth-service:
     build: ./auth-service
-    env_file:
-      - ./auth-service/.env
     environment:
       DATABASE_URL: postgresql+asyncpg://auth:auth@auth-db:5432/auth
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_ALGORITHM: HS256
     ports:
       - "8005:8000"
     depends_on:
       auth-db:
         condition: service_healthy
+
+  api-gateway:
+    build: ./api-gateway
+    environment:
+      AUTH_SERVICE_URL: http://auth-service:8000
+      CATALOG_SERVICE_URL: http://catalog-service:8000
+      ORDER_SERVICE_URL: http://order-service:8000
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_ALGORITHM: HS256
+    ports:
+      - "8000:8000"
+    depends_on:
+      auth-service:
+        condition: service_started
+      catalog-service:
+        condition: service_started
+      order-service:
+        condition: service_started

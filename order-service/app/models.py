@@ -18,10 +18,10 @@ class Base(DeclarativeBase):
 class Order(Base):
     __tablename__ = "orders"
 
-    user_id: Mapped[int]
+    user_id: Mapped[str] = mapped_column(String, nullable=False)
     status: Mapped[str] = mapped_column(default="created")
     total_amount: Mapped[int]
-    created_at: Mapped[datetime] = mapped_column(
+    created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
         nullable=False
