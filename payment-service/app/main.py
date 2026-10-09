@@ -2,6 +2,7 @@ from contextlib import asynccontextmanager
 import time
 
 from aio_pika import channel
+from aiokafka import AIOKafkaProducer
 from fastapi import FastAPI, Depends, Request
 
 from app.database import engine
@@ -11,20 +12,28 @@ from app.rabbitmq import connect_rabbitmq, declare_payment_exchange
 from app.schemas import PaymentReadSchema, PaymentCreateSchema
 from app.service import PaymentService
 from app.config import settings
+from app.kafka import create_kafka_producer
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     from app.models import PaymentORM
-    async with engine.begin() as connection:
-        await connection.run_sync(Base.metadata.create_all)
+    async with engine.begin() as database_connection:
+        await database_connection.run_sync(Base.metadata.create_all)
     
 
-    connection = await connect_rabbitmq(url=settings.rabbitmq_url)
-    channel = await connection.channel()
+    rabbitmq_connection = await connect_rabbitmq(url=settings.rabbitmq_url)
+    channel = await rabbitmq_connection.channel()
     app.state.payment_exchange = await declare_payment_exchange(channel, settings.payment_exchange_name)
-   
-    yield
+    kafka_producer: AIOKafkaProducer = create_kafka_producer()
+    await kafka_producer.start()
+    app.state.kafka_producer = kafka_producer
+
+    try:
+        yield
+    finally:
+        kafka_producer.stop()
+        rabbitmq_connection.close()
 
 
 app = FastAPI(lifespan=lifespan)
@@ -61,6 +70,7 @@ async def create_payment(
         order_id=payload.order_id,
         amount=payload.amount,
         exchange=request.app.state.payment_exchange,
+        kafka_producer=request.app.state.kafka_producer
     )
 
     return payment
